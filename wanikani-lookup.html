@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WaniKani Daily Lookup</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;600&family=DM+Mono:wght@400;500&family=Shippori+Mincho:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e0f;
+    --surface: #161618;
+    --border: #2a2a2e;
+    --accent: #e85d3a;
+    --text: #e8e4dc;
+    --text-muted: #6b6762;
+    --text-dim: #3a3835;
+    --green: #4caf82;
+    --yellow: #d4a843;
+    --blue: #6fa8dc;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .grain {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-size: 128px;
+    z-index: 1000;
+  }
+
+  /* API SETUP */
+  .setup-wrap {
+    max-width: 520px;
+    margin: 40px auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 32px;
+  }
+  .setup-label { font-size:10px;letter-spacing:0.14em;color:var(--accent);text-transform:uppercase;margin-bottom:6px; }
+  .setup-title { font-family:'Shippori Mincho',serif;font-size:26px;font-weight:800;margin-bottom:8px; }
+  .setup-sub { font-size:11px;color:var(--text-muted);margin-bottom:24px;line-height:1.6; }
+  .setup-row { display:flex;gap:8px; }
+  .setup-input {
+    flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);
+    font-family:'DM Mono',monospace;font-size:13px;padding:10px 14px;border-radius:4px;outline:none;
+  }
+  .setup-input:focus { border-color:var(--accent); }
+  .setup-hint { margin-top:10px;font-size:10px;color:var(--text-dim); }
+
+  /* DASHBOARD */
+  .dashboard { display:none; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .topbar-title {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .topbar-title span { color: var(--accent); }
+
+  input[type="date"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    padding: 7px 10px;
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="date"]:focus { border-color: var(--accent); }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); cursor: pointer; }
+
+  select.tz {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    padding: 7px 10px;
+    border-radius: 4px;
+    outline: none;
+  }
+
+  .btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    padding: 7px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: opacity 0.2s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    padding: 7px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .btn-ghost:hover { color: var(--text-muted); }
+
+  .status-bar {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    min-height: 14px;
+  }
+  .status-bar.error { color: var(--accent); }
+  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+  .loading-text { animation: pulse 1.4s ease-in-out infinite; }
+
+  /* MAIN 3-COL GRID */
+  .grid {
+    display: grid;
+    grid-template-columns: 190px 1fr 1fr;
+    gap: 10px;
+    align-items: start;
+  }
+
+  .col-title {
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 11px 13px;
+    margin-bottom: 4px;
+  }
+  .card-label {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .card-value {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .card-value.sm { font-size: 18px; }
+  .card-value.accent { color: var(--accent); }
+  .card-value.green { color: var(--green); }
+  .card-value.yellow { color: var(--yellow); }
+  .card-value.blue { color: var(--blue); }
+
+  .card-sub { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+
+  .bar-wrap { width:100%;height:3px;background:var(--border);border-radius:2px;margin-top:8px;overflow:hidden; }
+  .bar-fill { height:100%;border-radius:2px;transition:width 0.8s cubic-bezier(0.16,1,0.3,1);width:0%; }
+
+  .mini-grid { display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:4px; }
+
+  .empty { font-size:10px;color:var(--text-dim);letter-spacing:0.08em;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:4px;text-align:center; }
+
+  /* Lesson detail */
+  .detail-toggle {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    text-transform: uppercase;
+    cursor: pointer;
+    padding: 8px 0 2px;
+    display: inline-block;
+  }
+  .detail-toggle:hover { opacity: 0.7; }
+
+  /* Full-width lesson detail panel below the 3-col grid */
+  .detail-panel { display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:10px; }
+  .detail-panel.open { display:block; }
+
+  .detail-panel-title {
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  /* Auto-fill columns, each item ~180px wide, max 3 rows then new column */
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    grid-auto-rows: auto;
+    gap: 3px;
+  }
+
+  .type-label { font-size:9px;letter-spacing:0.12em;color:var(--text-dim);text-transform:uppercase;margin:8px 0 3px;grid-column:1/-1; }
+  .detail-item {
+    display:flex;align-items:center;gap:8px;
+    padding:6px 10px;
+    background:var(--surface);border:1px solid var(--border);border-radius:3px;
+  }
+  .detail-char { font-family:'Shippori Mincho',serif;font-size:18px;min-width:28px; }
+  .detail-meaning { font-size:11px;color:var(--text); }
+  .detail-reading { font-size:10px;color:var(--text-muted); }
+
+  .footer { margin-top:14px;font-size:9px;color:var(--text-dim);letter-spacing:0.06em; }
+  .footer a { color:var(--text-dim);text-decoration:none; }
+  .footer a:hover { color:var(--accent); }
+  .footer span { cursor:pointer; }
+  .footer span:hover { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="grain"></div>
+
+<!-- API KEY SETUP -->
+<div class="setup-wrap" id="apiSetup">
+  <div class="setup-label">毎日の記録 — First Time Setup</div>
+  <div class="setup-title">WaniKani Daily Lookup</div>
+  <div class="setup-sub">Enter your WaniKani API key. It will be saved in your browser — you'll never need to enter it again. Find it at wanikani.com → Settings → API Tokens. Read-only access is all that's needed.</div>
+  <div class="setup-row">
+    <input type="text" class="setup-input" id="apiKeyInput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+      onkeydown="if(event.key==='Enter') saveApiKey()" />
+    <button class="btn" onclick="saveApiKey()">保存 / Save</button>
+  </div>
+  <div class="setup-hint">Your key stays in your browser. It is never sent anywhere except WaniKani's API.</div>
+</div>
+
+<!-- MAIN DASHBOARD -->
+<div class="dashboard" id="dashboard">
+
+  <div class="topbar">
+    <div class="topbar-title">毎日の記録 <span>/</span> WaniKani</div>
+    <input type="date" id="datePicker" />
+    <select class="tz" id="tzOffset">
+      <option value="-10">UTC-10 (Hawaii)</option>
+      <option value="-9">UTC-9 (Alaska)</option>
+      <option value="-8">UTC-8 (PT)</option>
+      <option value="-7">UTC-7 (MT)</option>
+      <option value="-6">UTC-6 (CT)</option>
+      <option value="-5" selected>UTC-5 (ET)</option>
+      <option value="-4">UTC-4 (AT)</option>
+      <option value="0">UTC±0</option>
+      <option value="9">UTC+9 (JST)</option>
+    </select>
+    <button class="btn" id="fetchBtn" onclick="fetchData()">調べる / Fetch</button>
+    <button class="btn-ghost" onclick="clearApiKey()">Change Key</button>
+  </div>
+
+  <div class="status-bar" id="statusBar"></div>
+
+  <div class="grid" id="mainGrid" style="display:none">
+
+    <!-- COL 1: Level -->
+    <div>
+      <div class="col-title">レベル — Level</div>
+      <div class="card">
+        <div class="card-label">Current Level</div>
+        <div class="card-value accent" id="valLevel">—</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Kanji Progress</div>
+        <div class="card-value sm yellow" id="valLevelPct">—</div>
+        <div class="card-sub" id="valLevelFrac"></div>
+        <div class="bar-wrap"><div class="bar-fill" id="levelBar" style="background:var(--yellow)"></div></div>
+      </div>
+    </div>
+
+    <!-- COL 2: Reviews -->
+    <div>
+      <div class="col-title">レビュー — Reviews</div>
+      <div id="reviewsContent"><div class="empty">— fetch to load —</div></div>
+    </div>
+
+    <!-- COL 3: Lessons -->
+    <div>
+      <div class="col-title">レッスン — Lessons</div>
+      <div id="lessonsContent"><div class="empty">— fetch to load —</div></div>
+    </div>
+
+  </div>
+
+  <!-- Full-width lesson detail panel, outside the 3-col grid -->
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-panel-title">今日学んだこと — What I Learned Today</div>
+    <div class="detail-grid" id="detail-grid"></div>
+  </div>
+
+  <div class="footer">
+    API KEY STORED IN BROWSER · READ-ONLY ·
+    <a href="https://www.wanikani.com" target="_blank">WANIKANI.COM</a> ·
+    <span onclick="clearApiKey()">CHANGE KEY</span>
+  </div>
+
+</div>
+
+<script>
+  let API_KEY = localStorage.getItem('wk_api_key') || '';
+
+  function saveApiKey() {
+    const val = document.getElementById('apiKeyInput').value.trim();
+    if (!val) return;
+    localStorage.setItem('wk_api_key', val);
+    API_KEY = val;
+    showDashboard();
+  }
+
+  function clearApiKey() {
+    localStorage.removeItem('wk_api_key');
+    API_KEY = '';
+    document.getElementById('apiSetup').style.display = 'block';
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('apiKeyInput').value = '';
+  }
+
+  function showDashboard() {
+    document.getElementById('apiSetup').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    if (API_KEY) showDashboard();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    document.getElementById('datePicker').value = yesterday.toISOString().split('T')[0];
+  });
+
+  function setStatus(msg, isError) {
+    const el = document.getElementById('statusBar');
+    el.textContent = msg;
+    el.className = 'status-bar' + (isError ? ' error loading-text' : '');
+  }
+
+  function toggleDetailPanel() {
+    const panel = document.getElementById('detail-panel');
+    panel.classList.toggle('open');
+    // Update toggle text in lessons column
+    const toggles = document.querySelectorAll('.detail-toggle');
+    toggles.forEach(t => {
+      t.textContent = panel.classList.contains('open') ? '▲ Hide Details' : '▼ Show What I Learned';
+    });
+  }
+
+  async function fetchAllPages(url) {
+    let results = [], nextUrl = url;
+    while (nextUrl) {
+      const res = await fetch(nextUrl, { headers: { 'Authorization': `Bearer ${API_KEY}` } });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      results = results.concat(data.data);
+      nextUrl = data.pages?.next_url || null;
+    }
+    return results;
+  }
+
+  async function fetchData() {
+    const dateStr = document.getElementById('datePicker').value;
+    if (!dateStr) return;
+
+    const btn = document.getElementById('fetchBtn');
+    btn.disabled = true;
+    setStatus('読み込み中... fetching from WaniKani', false);
+    document.getElementById('mainGrid').style.display = 'none';
+
+    try {
+      const tzHours = parseFloat(document.getElementById('tzOffset').value);
+      const tzOffsetMs = tzHours * 60 * 60 * 1000;
+      const localMidnight = new Date(dateStr + 'T00:00:00Z');
+      const startUTC = new Date(localMidnight.getTime() - tzOffsetMs);
+      const endUTC = new Date(startUTC.getTime() + 24 * 60 * 60 * 1000 - 1);
+      const startDate = startUTC.toISOString().replace('.000Z', '.000000Z');
+      const endDate = endUTC.toISOString().replace('.999Z', '.999999Z');
+
+      const [allUpdated, updatedStats, userRes] = await Promise.all([
+        fetchAllPages(`https://api.wanikani.com/v2/assignments?updated_after=${startDate}`),
+        fetchAllPages(`https://api.wanikani.com/v2/review_statistics?updated_after=${startDate}`),
+        fetch('https://api.wanikani.com/v2/user', { headers: { 'Authorization': `Bearer ${API_KEY}` } })
+      ]);
+
+      const userData = await userRes.json();
+      const userLevel = userData.data.level;
+
+      const updatedOnDay = allUpdated.filter(a => a.data_updated_at >= startDate && a.data_updated_at <= endDate);
+      const dayReviews = updatedOnDay.filter(a => {
+        const started = a.data.started_at;
+        return started && started < startDate && a.data.srs_stage >= 1;
+      });
+      const dayLessons = allUpdated.filter(a => {
+        const started = a.data.started_at;
+        return started && started >= startDate && started <= endDate;
+      });
+
+      const dayStats = updatedStats.filter(s => s.data_updated_at >= startDate && s.data_updated_at <= endDate);
+      let totalCorrect = 0, totalAnswers = 0;
+      dayStats.forEach(s => {
+        const d = s.data;
+        totalCorrect += d.meaning_correct + d.reading_correct;
+        totalAnswers += d.meaning_correct + d.reading_correct + d.meaning_incorrect + d.reading_incorrect;
+      });
+
+      const totalReviews = dayReviews.length;
+      const accuracy = dayStats.length > 0 && totalAnswers > 0 ? Math.round((totalCorrect / totalAnswers) * 100) : null;
+      const srsDrop = dayReviews.filter(a => a.data.srs_stage === 1).length;
+      const srsAdvance = totalReviews - srsDrop;
+
+      const lessonsByType = { radical: 0, kanji: 0, vocabulary: 0, kana_vocabulary: 0 };
+      dayLessons.forEach(a => { if (a.data.subject_type in lessonsByType) lessonsByType[a.data.subject_type]++; });
+      const totalLessons = dayLessons.length;
+
+      const subjectIds = dayLessons.map(a => a.data.subject_id).join(',');
+      const [levelKanji, subjData] = await Promise.all([
+        fetchAllPages(`https://api.wanikani.com/v2/assignments?subject_types=kanji&levels=${userLevel}`),
+        subjectIds ? fetchAllPages(`https://api.wanikani.com/v2/subjects?ids=${subjectIds}`) : Promise.resolve([])
+      ]);
+
+      const lessonSubjects = {};
+      subjData.forEach(s => { lessonSubjects[s.id] = s.data; });
+
+      const passedKanji = levelKanji.filter(a => a.data.passed_at).length;
+      const totalKanji = levelKanji.length;
+      const levelPct = totalKanji > 0 ? Math.round((passedKanji / totalKanji) * 100) : 0;
+
+      // ── RENDER ──
+
+      document.getElementById('valLevel').textContent = userLevel;
+      document.getElementById('valLevelPct').textContent = levelPct + '%';
+      document.getElementById('valLevelFrac').textContent = `${passedKanji} of ${totalKanji} kanji passed`;
+
+      // Reviews
+      let rHtml = totalReviews === 0
+        ? `<div class="empty">ゼロ — no reviews</div>`
+        : `<div class="card">
+            <div class="card-label">Completed</div>
+            <div class="card-value accent">${totalReviews}</div>
+          </div>
+          <div class="mini-grid">
+            <div class="card">
+              <div class="card-label">Accuracy</div>
+              <div class="card-value sm green">${accuracy !== null ? accuracy + '%' : '—'}</div>
+              <div class="bar-wrap"><div class="bar-fill" id="accBar" style="background:var(--green)"></div></div>
+            </div>
+            <div class="card">
+              <div class="card-label">SRS ↑ / ↓</div>
+              <div class="card-value sm">
+                <span style="color:var(--green)">${srsAdvance}</span>
+                <span style="color:var(--text-dim);font-size:13px"> / </span>
+                <span style="color:var(--accent)">${srsDrop}</span>
+              </div>
+            </div>
+          </div>`;
+      document.getElementById('reviewsContent').innerHTML = rHtml;
+
+      // Lessons
+      let lHtml = '';
+      if (totalLessons === 0) {
+        lHtml = `<div class="empty">ゼロ — no lessons</div>`;
+        document.getElementById('detail-panel').classList.remove('open');
+      } else {
+        lHtml += `
+          <div class="mini-grid">
+            <div class="card"><div class="card-label">Total</div><div class="card-value accent">${totalLessons}</div></div>
+            <div class="card"><div class="card-label">Kanji</div><div class="card-value sm accent">${lessonsByType.kanji}</div></div>
+          </div>
+          <div class="mini-grid">
+            <div class="card"><div class="card-label">Vocab</div><div class="card-value sm yellow">${lessonsByType.vocabulary + (lessonsByType.kana_vocabulary || 0)}</div></div>
+            <div class="card"><div class="card-label">Radicals</div><div class="card-value sm blue">${lessonsByType.radical}</div></div>
+          </div>
+          <div class="detail-toggle" onclick="toggleDetailPanel()">▼ Show What I Learned</div>`;
+
+        // Build detail grid content (full-width panel outside main grid)
+        const typeOrder = ['kanji', 'vocabulary', 'kana_vocabulary', 'radical'];
+        const typeLabels = { kanji: '漢字 Kanji', vocabulary: '単語 Vocabulary', kana_vocabulary: '仮名 Kana Vocab', radical: '部首 Radicals' };
+        const typeColors = { kanji: 'var(--accent)', vocabulary: 'var(--yellow)', kana_vocabulary: 'var(--yellow)', radical: 'var(--blue)' };
+
+        let dgHtml = '';
+        typeOrder.forEach(type => {
+          const items = dayLessons.filter(a => a.data.subject_type === type);
+          if (!items.length) return;
+          dgHtml += `<div class="type-label">${typeLabels[type]}</div>`;
+          items.forEach(a => {
+            const subj = lessonSubjects[a.data.subject_id];
+            if (!subj) return;
+            const chars = subj.characters || '?';
+            const meaning = subj.meanings ? subj.meanings.filter(m => m.primary).map(m => m.meaning).join(', ') : '';
+            const reading = subj.readings ? subj.readings.filter(r => r.primary).map(r => r.reading).join(', ') : '';
+            dgHtml += `<div class="detail-item">
+              <span class="detail-char" style="color:${typeColors[type]}">${chars}</span>
+              <span>
+                <div class="detail-meaning">${meaning}</div>
+                ${reading ? `<div class="detail-reading">${reading}</div>` : ''}
+              </span>
+            </div>`;
+          });
+        });
+        document.getElementById('detail-grid').innerHTML = dgHtml;
+        document.getElementById('detail-panel').classList.remove('open');
+      }
+      document.getElementById('lessonsContent').innerHTML = lHtml;
+
+      document.getElementById('mainGrid').style.display = 'grid';
+      setStatus('');
+
+      setTimeout(() => {
+        const lb = document.getElementById('levelBar');
+        if (lb) lb.style.width = levelPct + '%';
+        if (accuracy !== null) {
+          const ab = document.getElementById('accBar');
+          if (ab) ab.style.width = accuracy + '%';
+        }
+      }, 100);
+
+    } catch (err) {
+      setStatus('Error: ' + err.message, true);
+    }
+
+    btn.disabled = false;
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && API_KEY) fetchData();
+  });
+</script>
+</body>
+</html>
