@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WaniKani Deep Lookup</title>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e0f;
+    --surface: #161618;
+    --border: #2a2a2e;
+    --accent: #e85d3a;
+    --text: #e8e4dc;
+    --text-muted: #6b6762;
+    --text-dim: #3a3835;
+    --burned:      #e85d3a;
+    --enlightened: #d4a843;
+    --master:      #6fa8dc;
+    --guru:        #4caf82;
+    --apprentice:  #9b8fd4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .grain {
+    position: fixed; inset: 0; pointer-events: none; opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-size: 128px; z-index: 1000;
+  }
+
+  /* SETUP */
+  .setup-wrap {
+    max-width: 520px; margin: 40px auto;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 32px;
+  }
+  .setup-label { font-size:10px;letter-spacing:0.14em;color:var(--accent);text-transform:uppercase;margin-bottom:6px; }
+  .setup-title { font-family:'Shippori Mincho',serif;font-size:26px;font-weight:800;margin-bottom:8px; }
+  .setup-sub { font-size:11px;color:var(--text-muted);margin-bottom:24px;line-height:1.6; }
+  .setup-row { display:flex;gap:8px; }
+  .setup-input {
+    flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);
+    font-family:'DM Mono',monospace;font-size:13px;padding:10px 14px;border-radius:4px;outline:none;
+  }
+  .setup-input:focus { border-color:var(--accent); }
+  .setup-hint { margin-top:10px;font-size:10px;color:var(--text-dim); }
+
+  /* DASHBOARD */
+  .dashboard { display:none; }
+
+  .topbar {
+    display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;
+  }
+  .topbar-title {
+    font-family:'Shippori Mincho',serif;font-size:14px;font-weight:600;
+    color:var(--text-muted);white-space:nowrap;
+  }
+  .topbar-title span { color:var(--accent); }
+
+  .btn {
+    background:var(--accent);color:white;border:none;
+    font-family:'DM Mono',monospace;font-size:11px;font-weight:500;
+    letter-spacing:0.1em;padding:7px 16px;border-radius:4px;cursor:pointer;
+    text-transform:uppercase;white-space:nowrap;transition:opacity 0.2s;
+  }
+  .btn:hover { opacity:0.85; }
+  .btn:disabled { opacity:0.4;cursor:not-allowed; }
+  .btn-ghost {
+    background:transparent;color:var(--text-dim);border:1px solid var(--border);
+    font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.08em;
+    padding:7px 12px;border-radius:4px;cursor:pointer;text-transform:uppercase;
+  }
+  .btn-ghost:hover { color:var(--text-muted); }
+  .btn-copy {
+    background:var(--surface);color:var(--text-muted);border:1px solid var(--border);
+    font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.08em;
+    padding:7px 14px;border-radius:4px;cursor:pointer;text-transform:uppercase;
+    transition:all 0.2s;white-space:nowrap;
+  }
+  .btn-copy:hover { border-color:var(--accent);color:var(--accent); }
+  .btn-copy.copied { border-color:var(--guru);color:var(--guru); }
+
+  .status-bar {
+    font-size:10px;letter-spacing:0.08em;color:var(--text-muted);
+    margin-bottom:10px;min-height:14px;
+  }
+  .status-bar.error { color:var(--accent); }
+  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+  .loading-text { animation:pulse 1.4s ease-in-out infinite; }
+
+  /* SUMMARY ROW */
+  .summary-row {
+    display:grid;
+    grid-template-columns:repeat(5, 1fr);
+    gap:6px;
+    margin-bottom:12px;
+  }
+
+  .summary-card {
+    background:var(--surface);border:1px solid var(--border);border-radius:4px;
+    padding:10px 12px;cursor:pointer;transition:border-color 0.2s;
+  }
+  .summary-card:hover { border-color:#3a3a3e; }
+  .summary-card.active { border-color:var(--stage-color); }
+
+  .summary-card-label {
+    font-size:9px;letter-spacing:0.14em;text-transform:uppercase;
+    color:var(--text-muted);margin-bottom:4px;
+  }
+  .summary-card-count {
+    font-family:'Shippori Mincho',serif;font-size:22px;font-weight:600;
+    color:var(--stage-color);line-height:1;
+  }
+  .summary-card-sub { font-size:9px;color:var(--text-dim);margin-top:2px; }
+
+  /* STAGE SECTIONS */
+  .stage-section { margin-bottom:12px; }
+
+  .stage-header {
+    display:flex;align-items:center;gap:10px;
+    padding:8px 12px;
+    background:var(--surface);border:1px solid var(--border);border-radius:4px 4px 0 0;
+    cursor:pointer;
+    user-select:none;
+  }
+  .stage-header:hover { border-color:#3a3a3e; }
+
+  .stage-dot {
+    width:8px;height:8px;border-radius:50%;background:var(--stage-color);flex-shrink:0;
+  }
+  .stage-name {
+    font-size:10px;letter-spacing:0.14em;text-transform:uppercase;
+    color:var(--stage-color);flex:1;
+  }
+  .stage-count { font-size:10px;color:var(--text-muted); }
+  .stage-chevron { font-size:9px;color:var(--text-dim);transition:transform 0.2s; }
+  .stage-chevron.open { transform:rotate(180deg); }
+
+  .stage-body {
+    display:none;
+    background:var(--surface);border:1px solid var(--border);border-top:none;
+    border-radius:0 0 4px 4px;padding:12px;
+  }
+  .stage-body.open { display:block; }
+
+  .type-row { margin-bottom:10px; }
+  .type-row:last-child { margin-bottom:0; }
+
+  .type-label {
+    font-size:9px;letter-spacing:0.12em;text-transform:uppercase;
+    color:var(--text-dim);margin-bottom:6px;
+  }
+
+  .char-wrap {
+    display:flex;flex-wrap:wrap;gap:4px;
+  }
+
+  .char-pill {
+    font-family:'Shippori Mincho',serif;
+    font-size:14px;
+    color:var(--stage-color);
+    background:var(--bg);
+    border:1px solid var(--border);
+    border-radius:3px;
+    padding:3px 7px;
+    line-height:1.3;
+    cursor:default;
+    transition:border-color 0.15s;
+  }
+  .char-pill:hover { border-color:var(--stage-color); }
+
+  /* COPY OUTPUT */
+  .copy-section {
+    margin-top:12px;
+    border-top:1px solid var(--border);
+    padding-top:12px;
+    display:none;
+  }
+  .copy-section.visible { display:block; }
+
+  .copy-header {
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:8px;
+  }
+  .copy-title {
+    font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-dim);
+  }
+
+  .copy-box {
+    background:var(--bg);border:1px solid var(--border);border-radius:4px;
+    padding:12px 14px;font-size:11px;line-height:1.8;color:var(--text-muted);
+    white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;
+    font-family:'DM Mono',monospace;
+  }
+
+  .footer {
+    margin-top:14px;font-size:9px;color:var(--text-dim);letter-spacing:0.06em;
+  }
+  .footer a { color:var(--text-dim);text-decoration:none; }
+  .footer a:hover { color:var(--accent); }
+  .footer span { cursor:pointer; }
+  .footer span:hover { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="grain"></div>
+
+<!-- SETUP -->
+<div class="setup-wrap" id="apiSetup">
+  <div class="setup-label">知識の地図 — First Time Setup</div>
+  <div class="setup-title">WaniKani Deep Lookup</div>
+  <div class="setup-sub">Enter your WaniKani API key. Saved in your browser — never needed again. Find it at wanikani.com → Settings → API Tokens.</div>
+  <div class="setup-row">
+    <input type="text" class="setup-input" id="apiKeyInput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+      onkeydown="if(event.key==='Enter') saveApiKey()" />
+    <button class="btn" onclick="saveApiKey()">保存 / Save</button>
+  </div>
+  <div class="setup-hint">Read-only access only. Your key never leaves your browser.</div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="dashboard" id="dashboard">
+
+  <div class="topbar">
+    <div class="topbar-title">知識の地図 <span>/</span> Knowledge Map</div>
+    <button class="btn" id="fetchBtn" onclick="fetchData()">更新 / Refresh</button>
+    <button class="btn-copy" id="copyBtn" onclick="copySnapshot()" style="display:none">📋 Copy Snapshot</button>
+    <button class="btn-ghost" onclick="clearApiKey()">Change Key</button>
+  </div>
+
+  <div class="status-bar" id="statusBar"></div>
+
+  <div id="summaryRow" class="summary-row" style="display:none"></div>
+  <div id="stageList"></div>
+
+  <div class="copy-section" id="copySection">
+    <div class="copy-header">
+      <div class="copy-title">Claude Snapshot — paste into any chat or project</div>
+      <button class="btn-copy" id="copyBtn2" onclick="copySnapshot()">📋 Copy</button>
+    </div>
+    <div class="copy-box" id="copyBox"></div>
+  </div>
+
+  <div class="footer">
+    知識の地図 · READ-ONLY ·
+    <a href="https://www.wanikani.com" target="_blank">WANIKANI.COM</a> ·
+    <span onclick="clearApiKey()">CHANGE KEY</span>
+  </div>
+
+</div>
+
+<script>
+  let API_KEY = localStorage.getItem('wk_api_key') || '';
+  let snapshotText = '';
+
+  const STAGES = [
+    { key: 'burned',      label: 'Burned',      range: [9,9],   color: '#e85d3a' },
+    { key: 'enlightened', label: 'Enlightened',  range: [8,8],   color: '#d4a843' },
+    { key: 'master',      label: 'Master',       range: [7,7],   color: '#6fa8dc' },
+    { key: 'guru',        label: 'Guru',         range: [5,6],   color: '#4caf82' },
+    { key: 'apprentice',  label: 'Apprentice',   range: [1,4],   color: '#9b8fd4' },
+  ];
+
+  function saveApiKey() {
+    const val = document.getElementById('apiKeyInput').value.trim();
+    if (!val) return;
+    localStorage.setItem('wk_api_key', val);
+    API_KEY = val;
+    showDashboard();
+  }
+
+  function clearApiKey() {
+    localStorage.removeItem('wk_api_key');
+    API_KEY = '';
+    document.getElementById('apiSetup').style.display = 'block';
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('apiKeyInput').value = '';
+  }
+
+  function showDashboard() {
+    document.getElementById('apiSetup').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    if (API_KEY) showDashboard();
+  });
+
+  function setStatus(msg, isError) {
+    const el = document.getElementById('statusBar');
+    el.textContent = msg;
+    el.className = 'status-bar' + (isError ? ' error' : '') + (msg && !isError ? ' loading-text' : '');
+  }
+
+  function stageForSrs(srs) {
+    for (const s of STAGES) {
+      if (srs >= s.range[0] && srs <= s.range[1]) return s.key;
+    }
+    return null;
+  }
+
+  async function fetchAllPages(url) {
+    let results = [], nextUrl = url;
+    while (nextUrl) {
+      const res = await fetch(nextUrl, { headers: { 'Authorization': `Bearer ${API_KEY}` } });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      results = results.concat(data.data);
+      nextUrl = data.pages?.next_url || null;
+    }
+    return results;
+  }
+
+  function toggleStage(key) {
+    const body = document.getElementById('body-' + key);
+    const chev = document.getElementById('chev-' + key);
+    if (!body) return;
+    body.classList.toggle('open');
+    chev.classList.toggle('open');
+  }
+
+  async function fetchData() {
+    const btn = document.getElementById('fetchBtn');
+    btn.disabled = true;
+    setStatus('読み込み中... fetching your knowledge map', false);
+    document.getElementById('summaryRow').style.display = 'none';
+    document.getElementById('stageList').innerHTML = '';
+    document.getElementById('copySection').classList.remove('visible');
+    document.getElementById('copyBtn').style.display = 'none';
+
+    try {
+      // Fetch user + all started assignments in parallel
+      const [userRes, allAssignments] = await Promise.all([
+        fetch('https://api.wanikani.com/v2/user', { headers: { 'Authorization': `Bearer ${API_KEY}` } }),
+        fetchAllPages('https://api.wanikani.com/v2/assignments?started=true&subject_types=kanji,vocabulary,kana_vocabulary')
+      ]);
+
+      const userData = await userRes.json();
+      const userLevel = userData.data.level;
+      const userName = userData.data.username;
+
+      // Group by SRS stage
+      const groups = {};
+      STAGES.forEach(s => groups[s.key] = { kanji: [], vocabulary: [] });
+
+      allAssignments.forEach(a => {
+        const stage = stageForSrs(a.data.srs_stage);
+        if (!stage) return;
+        const type = a.data.subject_type;
+        if (type === 'kanji') groups[stage].kanji.push(a.data.subject_id);
+        else if (type === 'vocabulary' || type === 'kana_vocabulary') groups[stage].vocabulary.push(a.data.subject_id);
+      });
+
+      // Fetch all subject details
+      const allIds = allAssignments.map(a => a.data.subject_id);
+      const subjData = await fetchAllPages(`https://api.wanikani.com/v2/subjects?ids=${allIds.join(',')}&subject_types=kanji,vocabulary,kana_vocabulary`);
+      const subjMap = {};
+      subjData.forEach(s => { subjMap[s.id] = s.data; });
+
+      // Build character lists
+      const charGroups = {};
+      STAGES.forEach(s => {
+        charGroups[s.key] = {
+          kanji: groups[s.key].kanji.map(id => subjMap[id]?.characters || '?').filter(Boolean),
+          vocabulary: groups[s.key].vocabulary.map(id => subjMap[id]?.characters || '?').filter(Boolean)
+        };
+      });
+
+      // ── RENDER SUMMARY ROW ──
+      const summaryEl = document.getElementById('summaryRow');
+      summaryEl.innerHTML = '';
+      STAGES.forEach(s => {
+        const total = charGroups[s.key].kanji.length + charGroups[s.key].vocabulary.length;
+        const card = document.createElement('div');
+        card.className = 'summary-card';
+        card.style.setProperty('--stage-color', s.color);
+        card.innerHTML = `
+          <div class="summary-card-label">${s.label}</div>
+          <div class="summary-card-count" style="color:${s.color}">${total}</div>
+          <div class="summary-card-sub">${charGroups[s.key].kanji.length}k · ${charGroups[s.key].vocabulary.length}v</div>
+        `;
+        card.onclick = () => {
+          const body = document.getElementById('body-' + s.key);
+          if (body) { body.classList.add('open'); document.getElementById('chev-' + s.key).classList.add('open'); body.scrollIntoView({behavior:'smooth', block:'nearest'}); }
+        };
+        summaryEl.appendChild(card);
+      });
+      summaryEl.style.display = 'grid';
+
+      // ── RENDER STAGE SECTIONS ──
+      const stageList = document.getElementById('stageList');
+      stageList.innerHTML = '';
+
+      STAGES.forEach(s => {
+        const kanjiChars = charGroups[s.key].kanji;
+        const vocabChars = charGroups[s.key].vocabulary;
+        const total = kanjiChars.length + vocabChars.length;
+        if (total === 0) return;
+
+        const section = document.createElement('div');
+        section.className = 'stage-section';
+        section.style.setProperty('--stage-color', s.color);
+
+        let bodyHtml = '';
+        if (kanjiChars.length > 0) {
+          bodyHtml += `<div class="type-row">
+            <div class="type-label">漢字 Kanji (${kanjiChars.length})</div>
+            <div class="char-wrap">
+              ${kanjiChars.map(c => `<span class="char-pill" style="color:${s.color}">${c}</span>`).join('')}
+            </div>
+          </div>`;
+        }
+        if (vocabChars.length > 0) {
+          bodyHtml += `<div class="type-row">
+            <div class="type-label">単語 Vocabulary (${vocabChars.length})</div>
+            <div class="char-wrap">
+              ${vocabChars.map(c => `<span class="char-pill" style="color:${s.color}">${c}</span>`).join('')}
+            </div>
+          </div>`;
+        }
+
+        section.innerHTML = `
+          <div class="stage-header" onclick="toggleStage('${s.key}')">
+            <div class="stage-dot" style="background:${s.color}"></div>
+            <div class="stage-name" style="color:${s.color}">${s.label}</div>
+            <div class="stage-count">${total} items · ${kanjiChars.length} kanji · ${vocabChars.length} vocab</div>
+            <div class="stage-chevron" id="chev-${s.key}">▼</div>
+          </div>
+          <div class="stage-body" id="body-${s.key}">${bodyHtml}</div>
+        `;
+        stageList.appendChild(section);
+      });
+
+      // ── BUILD SNAPSHOT TEXT ──
+      const today = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+      let snap = `WaniKani Knowledge Snapshot — ${userName} — ${today}\nLevel ${userLevel}\n\n`;
+
+      STAGES.forEach(s => {
+        const k = charGroups[s.key].kanji;
+        const v = charGroups[s.key].vocabulary;
+        if (k.length === 0 && v.length === 0) return;
+        snap += `${s.label.toUpperCase()} (SRS ${s.range[0]}${s.range[1] !== s.range[0] ? '-'+s.range[1] : ''}):\n`;
+        if (k.length > 0) snap += `Kanji: ${k.join('、')}\n`;
+        if (v.length > 0) snap += `Vocab: ${v.join('、')}\n`;
+        snap += '\n';
+      });
+
+      snapshotText = snap.trim();
+      document.getElementById('copyBox').textContent = snapshotText;
+      document.getElementById('copySection').classList.add('visible');
+      document.getElementById('copyBtn').style.display = 'inline-block';
+
+      setStatus('');
+
+    } catch (err) {
+      setStatus('Error: ' + err.message, true);
+    }
+
+    btn.disabled = false;
+  }
+
+  function copySnapshot() {
+    if (!snapshotText) return;
+    navigator.clipboard.writeText(snapshotText).then(() => {
+      ['copyBtn', 'copyBtn2'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2000);
+      });
+    });
+  }
+</script>
+</body>
+</html>
